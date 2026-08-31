@@ -169,6 +169,7 @@ COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 
 - [Self-hosting](./docs/self-host.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)
+- [Xcloud macOS provider](./docs/xcloud-provider.md)
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
 

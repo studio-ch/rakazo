@@ -6,7 +6,7 @@ name: publish-server-image
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["xcloud-v*"]
   pull_request:
     paths:
       - ".dockerignore"
@@ -45,8 +45,10 @@ jobs:
         include:
           - name: app
             dockerfile: infra/compose/Dockerfile
+            image: ghcr.io/studio-ch/rakazo-xcloud
           - name: updater
             dockerfile: infra/updater/Dockerfile
+            image: ghcr.io/studio-ch/rakazo-xcloud-updater
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -55,7 +57,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          images: ${{ matrix.image }}
           tags: type=sha,prefix=sha-
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -75,8 +77,8 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # QEMU arm64 is slow; keep everyday main→edge publishes at 90m. Multi-arch
-    # (v* tags + workflow_dispatch) needs the longer budget.
-    timeout-minutes: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && 180 || 90 }}
+    # (xcloud-v* tags + workflow_dispatch) needs the longer budget.
+    timeout-minutes: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/xcloud-v')) && 180 || 90 }}
     permissions:
       contents: read
       packages: write
@@ -89,14 +91,16 @@ jobs:
           # Only the updater image contains the Docker CLI; the application image stays unprivileged.
           - name: app
             dockerfile: infra/compose/Dockerfile
+            image: ghcr.io/studio-ch/rakazo-xcloud
           - name: updater
             dockerfile: infra/updater/Dockerfile
+            image: ghcr.io/studio-ch/rakazo-xcloud-updater
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       # Emulated arm64 only for releases and manual runs — not the ~10x/day main merge train.
-      - if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+      - if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/xcloud-v')
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Log in to GHCR
@@ -108,15 +112,16 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          # A fork can publish only to its own namespace; no credential can redirect this value.
-          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          images: ${{ matrix.image }}
           tags: |
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
+            type=match,pattern=xcloud-(v.*),group=1
             type=sha,prefix=sha-
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
-            # Stable releases only: a hyphen marks a prerelease (v1.0.0-rc.1) that must not move latest.
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/xcloud-v') && !contains(github.ref_name, '-rc.') && !contains(github.ref_name, '-beta') }}
+          labels: |
+            org.opencontainers.image.base.name=elie222/rakazo@a4ebad0cae4f9d0d3f6e7b3c30316b2bf6d924db
+            ch.studio.xcloud.adapter.version=0.1.0
+            ch.studio.xcloud.gateway.minimum-version=0.12.54
       - id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -126,7 +131,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Main→edge stays native amd64. Tags and workflow_dispatch publish amd64+arm64.
-          platforms: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: ${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/xcloud-v')) && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           # GET /health can report the exact source commit without a deployment-supplied override.
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
@@ -136,6 +141,6 @@ jobs:
       - name: Attest the published image
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          subject-name: ${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true

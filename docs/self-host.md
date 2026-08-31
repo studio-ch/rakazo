@@ -79,7 +79,7 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or none, e2b, daytona, box. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, daytona, box, xcloud. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
@@ -88,6 +88,13 @@ MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 BOX_API_KEY=              # when SANDBOX_PROVIDER=box
+XCLOUD_API_URL=           # when SANDBOX_PROVIDER=xcloud
+XCLOUD_SERVICE_TOKEN=     # dedicated computer:read/use/manage provider credential
+XCLOUD_REGION_ID=
+XCLOUD_FLAVOR_SLUG=
+XCLOUD_IMAGE_REF=
+XCLOUD_NETWORK_REF=       # optional, defaults to default
+XCLOUD_ADMIN_USERNAME=    # optional, defaults to admin
 ```
 
 To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio, llama.cpp, or
@@ -136,6 +143,11 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
   workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. A Box currently exposes one
   shared desktop, so concurrent Team bots can still use shell and files but only one can use
   graphical tools at a time.
+- **Xcloud** runs persistent macOS computers through the Xcloud Compute Runtime. Use a
+  dedicated provider installation and its `computer:read`, `computer:use`, and
+  `computer:manage` credential. `XCLOUD_REGION_ID`, `XCLOUD_FLAVOR_SLUG`, and
+  `XCLOUD_IMAGE_REF` select the default machine shape; Rakazo keeps durable workspace
+  state and restores it after an Xcloud replacement. See [Xcloud provider](./xcloud-provider.md).
 - **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default.
   The Electron app asks once; if you choose This Mac, bots can use working directories under your home
   folder. Do not enable it on a public or shared service. macOS does not show its own permission

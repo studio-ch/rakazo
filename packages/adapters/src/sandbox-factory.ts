@@ -1,4 +1,5 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
+import { XcloudSandboxProvider } from "@studio-ch/rakazo-xcloud-adapter";
 import { BoxSandboxEmulator } from "./box-emulator.js";
 import { BoxSandboxProvider } from "./box-sandbox.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
@@ -19,6 +20,13 @@ export interface SandboxProviderOptions {
   daytonaTarget?: string;
   boxApiKey?: string;
   boxApiUrl?: string;
+  xcloudApiUrl?: string;
+  xcloudServiceToken?: string;
+  xcloudRegionId?: string;
+  xcloudFlavorSlug?: string;
+  xcloudImageRef?: string;
+  xcloudNetworkRef?: string;
+  xcloudAdminUsername?: string;
   dataDir?: string;
 }
 
@@ -46,6 +54,30 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
     case "box":
       if (!opts.boxApiKey?.trim()) return missingRemoteKey("box", "BOX_API_KEY");
       return new BoxSandboxProvider({ apiKey: opts.boxApiKey, apiUrl: opts.boxApiUrl });
+    case "xcloud": {
+      const required = [
+        ["XCLOUD_API_URL", opts.xcloudApiUrl],
+        ["XCLOUD_SERVICE_TOKEN", opts.xcloudServiceToken],
+        ["XCLOUD_REGION_ID", opts.xcloudRegionId],
+        ["XCLOUD_FLAVOR_SLUG", opts.xcloudFlavorSlug],
+        ["XCLOUD_IMAGE_REF", opts.xcloudImageRef],
+      ] as const;
+      const missing = required.find(([, value]) => !value?.trim())?.[0];
+      if (missing) {
+        return new NoneSandboxProvider(
+          `Computers unavailable: ${missing} is required for SANDBOX_PROVIDER=xcloud.`,
+        );
+      }
+      return new XcloudSandboxProvider({
+        apiUrl: opts.xcloudApiUrl!,
+        serviceToken: opts.xcloudServiceToken!,
+        regionId: opts.xcloudRegionId!,
+        flavorSlug: opts.xcloudFlavorSlug!,
+        imageRef: opts.xcloudImageRef!,
+        networkRef: opts.xcloudNetworkRef,
+        adminUsername: opts.xcloudAdminUsername,
+      });
+    }
     case "docker":
       return new DockerSandboxProvider(
         opts.supervisorUrl ?? "http://127.0.0.1:7091",
@@ -65,7 +97,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | box | xcloud | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
       );
   }
 }

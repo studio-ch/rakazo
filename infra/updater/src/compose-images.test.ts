@@ -39,7 +39,7 @@ describe("the images compose file", () => {
       "worker",
     ]);
     for (const service of appServices) {
-      expect(compose.services[service]?.image).toContain("ghcr.io/elie222/rakazo/app");
+      expect(compose.services[service]?.image).toContain("ghcr.io/studio-ch/rakazo-xcloud");
       expect(compose.services[service]?.image).toContain("RAKAZO_IMAGE_TAG");
     }
     expect(compose.services.computer?.image).toContain("ghcr.io/elie222/rakazo/computer");

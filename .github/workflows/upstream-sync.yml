@@ -1,0 +1,67 @@
+name: xcloud-upstream-sync
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: xcloud-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge current upstream into a compatibility branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/elie222/rakazo.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main origin/main; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch --force-create automation/xcloud-upstream-sync origin/main
+          git merge --no-edit upstream/main
+          git push --force-with-lease origin automation/xcloud-upstream-sync
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$(git rev-parse upstream/main)" >> "$GITHUB_OUTPUT"
+          if ! gh pr list --head automation/xcloud-upstream-sync --state open --json number --jq 'length > 0' | grep -qx true; then
+            gh pr create \
+              --base main \
+              --head automation/xcloud-upstream-sync \
+              --title "chore: verify current Rakazo upstream" \
+              --body "Automated compatibility merge of elie222/rakazo@$(git rev-parse upstream/main). This PR is intentionally blocking: review adapter-kit and SandboxProvider changes, then update the Xcloud compatibility pin only after CI and a macOS acceptance run pass."
+          fi
+      - uses: pnpm/action-setup@v4
+        if: steps.merge.outputs.changed == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.merge.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.merge.outputs.changed == 'true'
+      - run: pnpm db:generate
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - run: pnpm --filter @studio-ch/rakazo-xcloud-adapter test
+        if: steps.merge.outputs.changed == 'true'
+      - run: pnpm check
+        if: steps.merge.outputs.changed == 'true'

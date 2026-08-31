@@ -78,6 +78,30 @@ describe("loadEnv", () => {
     });
   });
 
+  it("loads Xcloud runtime configuration without exposing it to other providers", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "xcloud",
+      XCLOUD_API_URL: "https://api.xcloud.invalid",
+      XCLOUD_SERVICE_TOKEN: "test-xcloud-service-token",
+      XCLOUD_REGION_ID: "region-test",
+      XCLOUD_FLAVOR_SLUG: "mac.small",
+      XCLOUD_IMAGE_REF: "tahoe-test",
+      XCLOUD_NETWORK_REF: "network-test",
+      XCLOUD_ADMIN_USERNAME: "admin",
+    });
+    expect(env).toMatchObject({
+      sandboxProvider: "xcloud",
+      xcloudApiUrl: "https://api.xcloud.invalid",
+      xcloudServiceToken: "test-xcloud-service-token",
+      xcloudRegionId: "region-test",
+      xcloudFlavorSlug: "mac.small",
+      xcloudImageRef: "tahoe-test",
+      xcloudNetworkRef: "network-test",
+      xcloudAdminUsername: "admin",
+    });
+  });
+
   it("throws when production omits secrets", () => {
     expect(() =>
       loadEnv({
