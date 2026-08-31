@@ -17,6 +17,10 @@ describe("resolveSandboxProvider", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "box" })).toBe("none");
   });
 
+  it("keeps Xcloud selected so the factory can report exact missing configuration", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "xcloud" })).toBe("xcloud");
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     expect(
       resolveSandboxProvider({

@@ -68,6 +68,13 @@ async function main() {
     daytonaTarget: process.env.DAYTONA_TARGET,
     boxApiKey: process.env.BOX_API_KEY,
     boxApiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
+    xcloudApiUrl: process.env.XCLOUD_API_URL,
+    xcloudServiceToken: process.env.XCLOUD_SERVICE_TOKEN,
+    xcloudRegionId: process.env.XCLOUD_REGION_ID,
+    xcloudFlavorSlug: process.env.XCLOUD_FLAVOR_SLUG,
+    xcloudImageRef: process.env.XCLOUD_IMAGE_REF,
+    xcloudNetworkRef: process.env.XCLOUD_NETWORK_REF,
+    xcloudAdminUsername: process.env.XCLOUD_ADMIN_USERNAME,
     dataDir,
     prisma,
   });

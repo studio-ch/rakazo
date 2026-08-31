@@ -155,6 +155,13 @@ export async function createApp(
     daytonaTarget: env.daytonaTarget,
     boxApiKey: env.boxApiKey,
     boxApiUrl: env.boxApiUrl,
+    xcloudApiUrl: env.xcloudApiUrl,
+    xcloudServiceToken: env.xcloudServiceToken,
+    xcloudRegionId: env.xcloudRegionId,
+    xcloudFlavorSlug: env.xcloudFlavorSlug,
+    xcloudImageRef: env.xcloudImageRef,
+    xcloudNetworkRef: env.xcloudNetworkRef,
+    xcloudAdminUsername: env.xcloudAdminUsername,
     dataDir: env.dataDir,
     prisma,
   });

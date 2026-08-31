@@ -43,9 +43,29 @@ describe("createSandboxProvider", () => {
     expect(createSandboxProvider("box", { boxApiKey: "test-box-key" }).describe().id).toBe("box");
   });
 
+  it("constructs Xcloud only with the complete runtime configuration", async () => {
+    const missing = createSandboxProvider("xcloud", {});
+    expect(missing.describe().id).toBe("none");
+    await expect(missing.provision({ botId: "b", homePath: "/tmp" }, ctx)).rejects.toThrow(
+      /XCLOUD_API_URL/,
+    );
+
+    const xcloud = createSandboxProvider("xcloud", {
+      xcloudApiUrl: "https://api.xcloud.invalid",
+      xcloudServiceToken: "test-service-token",
+      xcloudRegionId: "region-test",
+      xcloudFlavorSlug: "mac.small",
+      xcloudImageRef: "tahoe-test",
+    });
+    expect(xcloud.describe()).toMatchObject({
+      id: "xcloud",
+      capabilities: { graphical: true, pty: false, multiScreen: false },
+    });
+  });
+
   it("throws on unknown provider", () => {
     expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | box | xcloud | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.',
     );
   });
 });

@@ -32,6 +32,13 @@ export interface AppEnv {
   daytonaTarget: string | undefined;
   boxApiKey: string | undefined;
   boxApiUrl: string | undefined;
+  xcloudApiUrl: string | undefined;
+  xcloudServiceToken: string | undefined;
+  xcloudRegionId: string | undefined;
+  xcloudFlavorSlug: string | undefined;
+  xcloudImageRef: string | undefined;
+  xcloudNetworkRef: string | undefined;
+  xcloudAdminUsername: string | undefined;
   composioApiKey: string | undefined;
   pipedreamClientId: string | undefined;
   pipedreamClientSecret: string | undefined;
@@ -88,6 +95,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     daytonaTarget: source.DAYTONA_TARGET,
     boxApiKey: source.BOX_API_KEY,
     boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
+    xcloudApiUrl: optional(source.XCLOUD_API_URL),
+    xcloudServiceToken: optional(source.XCLOUD_SERVICE_TOKEN),
+    xcloudRegionId: optional(source.XCLOUD_REGION_ID),
+    xcloudFlavorSlug: optional(source.XCLOUD_FLAVOR_SLUG),
+    xcloudImageRef: optional(source.XCLOUD_IMAGE_REF),
+    xcloudNetworkRef: optional(source.XCLOUD_NETWORK_REF),
+    xcloudAdminUsername: optional(source.XCLOUD_ADMIN_USERNAME),
     composioApiKey: source.COMPOSIO_API_KEY,
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
     pipedreamClientSecret: optional(source.PIPEDREAM_CLIENT_SECRET),
