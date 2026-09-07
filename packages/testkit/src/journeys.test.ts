@@ -2107,11 +2107,22 @@ describeJourneys("required product journeys", () => {
     });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-    void rpc(app, cookie, "threads/send", {
+    const { runId: activeRunId } = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
       text: "keep working until I stop you",
     });
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Exercise cancellation of an active runtime, not a race against computer initialization.
+    await waitForDatabase(async () =>
+      Boolean(
+        await prisma.event.findFirst({
+          where: {
+            runId: activeRunId,
+            type: "thread.progress",
+            payload: { path: ["text"], equals: "still working…" },
+          },
+        }),
+      ),
+    );
     const skill = await rpc<{
       id: string;
       status: string;
@@ -2122,6 +2133,9 @@ describeJourneys("required product journeys", () => {
       goal: "Export weekly CRM list",
     });
     expect(skill.status).toBe("recording");
+    expect((await prisma.run.findUniqueOrThrow({ where: { id: activeRunId } })).status).toBe(
+      "cancelled",
+    );
     await rpc(app, cookie, "computer/input", {
       botId: bot.id,
       kind: "pointer",
