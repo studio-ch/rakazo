@@ -73,6 +73,13 @@ Before upgrading, verify the compatibility table and run the adapter contract
 tests. The weekly upstream-sync workflow opens a compatibility PR instead of moving
 the upstream pin automatically.
 
+An open `automation/xcloud-upstream-sync` PR pauses further sync attempts so that
+manual conflict resolutions are preserved. Conflicting merges leave the remote
+branch untouched and list the files needing resolution in the workflow summary.
+The current integration branch also accepts upstream `spaceId` contexts and maps
+them to Xcloud's `workspaceId` field; the released compatibility table above stays
+unchanged until a macOS acceptance run passes.
+
 Rollback by restoring the previous image digest. Existing `providerRef` values
 remain valid as long as the target version supports the same adapter contract.
 

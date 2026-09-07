@@ -12,7 +12,7 @@ function context(): AdapterContext {
   return {
     operationId: "op-1",
     traceId: "trace-1",
-    workspaceId: "workspace-1",
+    spaceId: "workspace-1",
     userId: "user-1",
     screenLeaseId: "screen-lease-1",
     signal: new AbortController().signal,
@@ -60,7 +60,11 @@ describe("XcloudSandboxProvider", () => {
     });
   });
 
-  it("provisions with the external computer key and preserves fresh", async () => {
+  it.each([
+    { spaceId: "workspace-1" },
+    { workspaceId: "workspace-1" },
+    { spaceId: "workspace-1", workspaceId: "legacy-workspace" },
+  ])("provisions with namespace %j and preserves fresh", async (namespace) => {
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
       const body = JSON.parse(String(init?.body));
       expect(body).toMatchObject({
@@ -74,7 +78,11 @@ describe("XcloudSandboxProvider", () => {
     });
     const provider = new XcloudSandboxProvider(config(fetcher));
     await expect(
-      provider.provision({ botId: "team-computer", homePath: "/ignored" }, context()),
+      provider.provision({ botId: "team-computer", homePath: "/ignored" }, {
+        ...context(),
+        spaceId: undefined,
+        ...namespace,
+      } as AdapterContext),
     ).resolves.toEqual({ ...computer, fresh: true });
   });
 

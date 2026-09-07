@@ -5,7 +5,7 @@ import { createSandboxProvider } from "./sandbox-factory.js";
 const ctx = {
   operationId: "op",
   traceId: "tr",
-  workspaceId: "ws",
+  spaceId: "ws",
   userId: "user",
   signal: new AbortController().signal,
 };
@@ -29,7 +29,7 @@ describe("createSandboxProvider", () => {
     expect(createSandboxProvider("daytona-emulator", {}).describe().id).toBe("daytona-emulator");
     expect(createSandboxProvider("box-emulator", {}).describe()).toMatchObject({
       id: "box-emulator",
-      capabilities: { multiScreen: false },
+      capabilities: { multiScreen: true },
     });
   });
 

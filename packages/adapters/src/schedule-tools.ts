@@ -176,7 +176,7 @@ export interface ScheduleToolDeps {
 export async function createScheduleFromTool(
   deps: ScheduleToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     userId: string;
     threadId: string;
@@ -197,7 +197,7 @@ export async function createScheduleFromTool(
 
   const row = await deps.prisma.routine.create({
     data: {
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       userId: input.userId,
       threadId: input.threadId,
@@ -228,7 +228,7 @@ export async function createScheduleFromTool(
 
   try {
     await deps.events.append({
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       threadId: input.threadId,
       botId: input.botId,
       type: "routine.created",
@@ -251,11 +251,11 @@ export async function createScheduleFromTool(
 /** List bot routines, optionally restricted to the current group thread. */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { workspaceId: string; botId: string; userId: string; threadId?: string },
+  input: { spaceId: string; botId: string; userId: string; threadId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
     where: {
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       userId: input.userId,
       ...(input.threadId ? { threadId: input.threadId } : {}),
@@ -279,7 +279,7 @@ export async function listSchedulesFromTool(
 export async function cancelScheduleFromTool(
   deps: ScheduleToolDeps,
   input: {
-    workspaceId: string;
+    spaceId: string;
     botId: string;
     userId: string;
     threadId?: string;
@@ -295,7 +295,7 @@ export async function cancelScheduleFromTool(
 
   const existing = await deps.prisma.routine.findFirst({
     where: {
-      workspaceId: input.workspaceId,
+      spaceId: input.spaceId,
       botId: input.botId,
       userId: input.userId,
       ...(input.threadId ? { threadId: input.threadId } : {}),

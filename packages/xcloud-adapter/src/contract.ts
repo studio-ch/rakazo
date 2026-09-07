@@ -1,21 +1,23 @@
 /**
- * Structural subset of @rakazo/adapter-kit@0.1.0 pinned from
- * elie222/rakazo@a4ebad0cae4f9d0d3f6e7b3c30316b2bf6d924db.
+ * Structural subset of @rakazo/adapter-kit@0.1.0, including the spaceId
+ * context introduced before upstream 6673b7b1489e1b62b1e0be34ae441637760f22c8.
  *
  * Keeping this tiny contract local lets the adapter ship independently while
- * remaining assignable to Rakazo's SandboxProvider. The compatibility test
- * fixtures are deliberately based on the same commit.
+ * remaining assignable to Rakazo's SandboxProvider. Retain legacy workspaceId
+ * callers while translating the current spaceId to Xcloud's wire contract.
  */
-export interface AdapterContext {
+interface AdapterContextBase {
   operationId: string;
   traceId: string;
-  workspaceId: string;
   userId: string;
   botId?: string;
   runId?: string;
   screenLeaseId?: string;
   signal: AbortSignal;
 }
+
+export type AdapterContext = AdapterContextBase &
+  ({ spaceId: string; workspaceId?: string } | { spaceId?: string; workspaceId: string });
 
 export interface AdapterDescriptor<T> {
   id: string;

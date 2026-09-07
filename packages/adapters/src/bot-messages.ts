@@ -15,6 +15,7 @@ import {
   type PrismaClient,
   withTransactionRetry,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor.js";
 
 /**
@@ -62,7 +63,7 @@ export async function messageBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: {
     id: string;
-    workspaceId: string;
+    spaceId: string;
     threadId: string;
     botId: string;
     userId: string;
@@ -92,7 +93,7 @@ export async function messageBot(
   const hop = nextBotMessageHop(sourceContext?.hop);
 
   const candidates = await deps.prisma.bot.findMany({
-    where: { workspaceId: run.workspaceId, userId: run.userId, archivedAt: null },
+    where: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
     select: { id: true, name: true, title: true, thread: { select: { id: true } } },
   });
   const target = resolveBotAddress(candidates, {
@@ -176,7 +177,7 @@ export async function messageBot(
         const senderStillRunning = await tx.run.findFirst({
           where: {
             id: run.id,
-            workspaceId: run.workspaceId,
+            spaceId: run.spaceId,
             threadId: run.threadId,
             botId: run.botId,
             userId: run.userId,
@@ -192,7 +193,7 @@ export async function messageBot(
         const stillAddressable = await tx.bot.findFirst({
           where: {
             id: target.id,
-            workspaceId: run.workspaceId,
+            spaceId: run.spaceId,
             userId: run.userId,
             archivedAt: null,
           },
@@ -233,7 +234,7 @@ export async function messageBot(
         });
         const task = await tx.task.create({
           data: {
-            workspaceId: run.workspaceId,
+            spaceId: run.spaceId,
             botId: target.id,
             threadId: targetThreadId,
             userId: run.userId,
@@ -243,7 +244,7 @@ export async function messageBot(
         });
         const nextRun = await tx.run.create({
           data: {
-            workspaceId: run.workspaceId,
+            spaceId: run.spaceId,
             botId: target.id,
             threadId: targetThreadId,
             taskId: task.id,
@@ -256,7 +257,7 @@ export async function messageBot(
         });
         await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
         const inboundEvent = await appendEventInTransaction(tx, {
-          workspaceId: run.workspaceId,
+          spaceId: run.spaceId,
           threadId: targetThreadId,
           botId: target.id,
           type: "thread.message.created",
@@ -264,7 +265,7 @@ export async function messageBot(
           payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
         });
         const outboundEvent = await appendEventInTransaction(tx, {
-          workspaceId: run.workspaceId,
+          spaceId: run.spaceId,
           threadId: run.threadId,
           botId: run.botId,
           type: "thread.message.created",
@@ -295,14 +296,14 @@ export async function messageBot(
   if (!committed.ok) return committed;
 
   await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
-    console.error("bot message realtime notification", error);
+    getLogger().error("bot message realtime notification", error);
   });
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch((error) => {
-    console.error("bot message sender echo notification", error);
+    getLogger().error("bot message sender echo notification", error);
   });
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
     // The queued run is durable; the job reconciler repairs a missed wake.
-    console.error("bot message enqueue", error);
+    getLogger().error("bot message enqueue", error);
   });
   return {
     ok: true as const,
@@ -318,7 +319,7 @@ export async function returnBotMessageOutcome(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: {
     id: string;
-    workspaceId: string;
+    spaceId: string;
     threadId: string;
     botId: string;
     userId: string;
@@ -331,17 +332,20 @@ export async function returnBotMessageOutcome(
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   if (!source) {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    // Handled: nothing to deliver. Return true so callers do not release a reservation.
+    return true;
   }
   const sourceIntent = source.intent ?? "request";
   if (sourceIntent !== "request" && sourceIntent !== "question") {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    return true;
   }
   const sent = await deps.prisma.message.findMany({
     where: { threadId: run.threadId, runId: run.id },
     select: { blocks: true },
   });
+  // Only an explicit result counts as a terminal outcome. Interim message_bot
+  // status updates must not suppress the automatic final return.
   const alreadyReturned = sent.some((message) =>
     (Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : []).some(
       (block) =>
@@ -352,7 +356,7 @@ export async function returnBotMessageOutcome(
   );
   if (alreadyReturned) {
     await markBotOutcomeReturned(deps.prisma, run.id);
-    return false;
+    return true;
   }
   const outcome = await messageBot(
     deps,
@@ -362,7 +366,8 @@ export async function returnBotMessageOutcome(
       bot_id: source.fromBotId,
       message: clampBotMessage(text),
       intent,
-      deliveryKey: `auto-${intent}:${run.id}`,
+      // One key per run so status vs result (executor vs reconciler) cannot double-deliver.
+      deliveryKey: `auto-outcome:${run.id}`,
     },
     { allowTerminalSource: true },
   );

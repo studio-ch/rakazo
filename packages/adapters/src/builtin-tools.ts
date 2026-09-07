@@ -1,4 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import {
+  BotSecretDestination,
+  BotSecretName,
+  SecretAskPurpose,
+  SecretHttpRequest,
+} from "@rakazo/contracts";
+import { z } from "zod";
 
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
@@ -48,6 +55,49 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         observe: { type: "boolean" },
         settle_ms: { type: "number" },
+      },
+      required: ["actions"],
+    },
+  },
+
+  {
+    name: "browser_navigate",
+    description:
+      'Open a URL in the page browser on this bot\'s computer and return the document title. Prefer this over pixel clicks for web pages. If the result includes fallback:"computer_act", use computer_act on the desktop browser instead.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "http(s) URL to open." },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "browser_snapshot",
+    description:
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If fallback is computer_act, use the desktop tools instead.",
+    inputSchema: { type: "object", properties: {} },
+    readOnly: true,
+  },
+  {
+    name: "browser_act",
+    description:
+      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type). Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["click", "fill", "type"] },
+              ref: { type: "string", description: "Element ref from browser_snapshot." },
+              text: { type: "string", description: "Text for fill or type." },
+            },
+            required: ["kind", "ref"],
+          },
+        },
       },
       required: ["actions"],
     },
@@ -141,18 +191,77 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "ask_user",
+    description:
+      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: { type: "string", maxLength: 240 },
+        options: {
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 80 },
+          minItems: 2,
+          maxItems: 4,
+          uniqueItems: true,
+        },
+      },
+      required: ["question", "options"],
+    },
+  },
+  {
+    name: "message_user",
+    description:
+      "Post a short progress update to the user in this chat immediately. Does not end your turn. Use sparingly during long work for high-signal beats (what you are checking, then a result). Do not dump tool logs, thinking, or a play-by-play of every call. HARD LIMIT: cut off silently at 500 characters, so never put your final answer, a report, or any long-form content here \u2014 it will arrive mangled and the user will never see the rest. Always write your complete final answer in your normal reply, not here.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          maxLength: 500,
+          description:
+            "Short user-visible update, not the final answer \u2014 longer text is silently truncated.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "request_secret",
     description:
-      "Collect a one-shot OTP, password, or API key in a masked field that never reaches the chat transcript or model. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
+      "Collect a credential in a masked field. Supply credential to save a named API credential for this bot and user at one HTTPS origin, or connectionId for a one-use connector code. Existing named credentials are reused unless replace is true. For website logins, CAPTCHA, passkeys, or anything that needs the live desktop, call request_takeover instead.",
     inputSchema: {
       type: "object",
       properties: {
         label: { type: "string" },
-        purpose: { type: "string", enum: ["otp", "password", "api_key"] },
+        purpose: { type: "string", enum: SecretAskPurpose.options },
         connectionId: { type: "string" },
+        credential: z.toJSONSchema(BotSecretDestination),
+        replace: {
+          type: "boolean",
+          description: "Ask the user to replace an existing credential value.",
+        },
       },
       required: ["label", "purpose"],
     },
+  },
+  {
+    name: "list_secrets",
+    description:
+      "List saved credential names and destinations available to this bot and user. Values are never returned.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "secret_request",
+    description:
+      "Make an authenticated HTTPS request using a saved credential name. The backend injects authentication only at its saved origin. Redirects are rejected; response echoes of the credential are redacted. Use normal request URLs and bodies without secret placeholders.",
+    inputSchema: z.toJSONSchema(SecretHttpRequest, { io: "input" }),
+  },
+  {
+    name: "forget_secret",
+    description:
+      "Remove a saved credential for this bot and user, preventing future requests from using it.",
+    inputSchema: z.toJSONSchema(z.object({ name: BotSecretName })),
   },
   {
     name: "render_plot",
@@ -197,7 +306,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "add_mcp_server",
     description:
-      "Connect an MCP tool server to this workspace when the user asks you to add one and provides the details (URL or command, optional token/headers/env). The server is created immediately and assigned to you. If it needs browser OAuth authorization, an approval card appears in the chat for the user to complete — tell them to click Authorize. Do not invent endpoints; only use details the user provided.",
+      "Connect an MCP tool server to this Space when the user asks you to add one and provides the details (URL or command, optional token/headers/env). The server is created immediately and assigned to you. If it needs browser OAuth authorization, an approval card appears in the chat for the user to complete — tell them to click Authorize. Do not invent endpoints; only use details the user provided.",
     inputSchema: {
       type: "object",
       properties: {
@@ -290,8 +399,73 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
     readOnly: true,
   },
+  {
+    name: "cloud_agent_launch",
+    description:
+      "Launch a remote cloud coding agent on a connected repository. Returns immediately with a tracking id and status; the agent link appears when launched. Opens a PR when openPr is true. Not the bot computer.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Task for the remote agent." },
+        repository: {
+          type: "string",
+          description: "Git repository URL (optional for no-repo agents).",
+        },
+        openPr: {
+          type: "boolean",
+          description: "Open a pull request when the run finishes.",
+        },
+        images: {
+          type: "array",
+          description: "Optional images (data+mimeType or url).",
+          items: { type: "object" },
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_status",
+    description: "Get status, branch, and PR url for a cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id from launch." },
+      },
+      required: ["id"],
+    },
+    readOnly: true,
+  },
+  {
+    name: "cloud_agent_reply",
+    description: "Send a follow-up prompt to an existing cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id." },
+        prompt: { type: "string", description: "Follow-up instruction." },
+        images: {
+          type: "array",
+          description: "Optional images (data+mimeType or url).",
+          items: { type: "object" },
+        },
+      },
+      required: ["id", "prompt"],
+    },
+  },
+  {
+    name: "cloud_agent_cancel",
+    description: "Cancel the active run on a cloud coding agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Cloud agent id." },
+      },
+      required: ["id"],
+    },
+  },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
-  // workspace memory provider is configured (which hides `remember`).
+  // A Space memory provider is configured (which hides `remember`).
   {
     name: "save_memory",
     description:
@@ -393,7 +567,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         name: { type: "string", description: "Short label shown in Routines." },
         prompt: {
           type: "string",
-          description: "What the bot should do when the schedule fires.",
+          description:
+            "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
         },
         cron: { type: "string", description: "5-field cron for repeating schedules." },
         every: { type: "number", description: "Repeat interval amount for repeating schedules." },
@@ -520,6 +695,23 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "create_space",
+    description:
+      "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. This always shows the user a confirmation card before creation. Creating the space is the whole action; do not create bots in it unless the user asks later.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          minLength: 1,
+          maxLength: 60,
+          description: 'Short display name, e.g. "Customer support".',
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "spawn_bot",
     description:
       "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
@@ -532,6 +724,12 @@ export const builtinAgentTools: ConnectorTool[] = [
         prompt: {
           type: "string",
           description: "Optional first task to run in the new bot's thread.",
+        },
+        computer_mode: {
+          type: "string",
+          enum: ["team", "dedicated"],
+          description:
+            "Optional. team shares one screen with other Team bots; dedicated (Private) gets its own. Defaults to team.",
         },
       },
       required: ["name"],
@@ -557,7 +755,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "message_bot",
     description:
-      "Send a useful update, question, or result to another of the user's bots. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.",
+      'Send a useful update, question, or result to another of the user\'s bots. You must call this tool to actually deliver it — writing the message in your own reply text (e.g. "[to Comms] ...") does not send anything and the recipient never sees it. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.',
     inputSchema: {
       type: "object",
       properties: {
@@ -595,21 +793,22 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
 ];
 
-/** Agent-connection tools, exposed only when the phone surface is enabled. */
+/** Agent-connection tools, exposed only when the messaging surface is enabled. */
 export const agentConnectionTools: ConnectorTool[] = [
   {
     name: "connect_agent",
     description:
-      "Request a standing connection to another person's agent by their phone number. The other owner must approve before either agent can message the other. Only for agents whose owner texted the deployment's phone line.",
+      "Request a standing connection to another person's agent by their owner's chat address. The other owner must approve before either agent can message the other. Only for agents whose owner messaged the deployment's chat line.",
     inputSchema: {
       type: "object",
       properties: {
-        phone: {
+        address: {
           type: "string",
-          description: "E.164 phone number of the agent's owner, e.g. +15551234567.",
+          description:
+            "The owner's address on the chat surface: an E.164 phone number (e.g. +15551234567) or platform user id.",
         },
       },
-      required: ["phone"],
+      required: ["address"],
     },
   },
   {
@@ -631,13 +830,14 @@ export const agentConnectionTools: ConnectorTool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        phone: {
+        address: {
           type: "string",
-          description: "E.164 phone number of the connected agent's owner.",
+          description:
+            "Chat address (phone number or platform user id) of the connected agent's owner.",
         },
         message: { type: "string", description: "What to send." },
       },
-      required: ["phone", "message"],
+      required: ["address", "message"],
     },
   },
 ];

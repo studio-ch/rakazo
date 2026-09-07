@@ -202,7 +202,7 @@ export class XcloudSandboxProvider implements SandboxProvider {
         method: "POST",
         body: JSON.stringify({
           externalComputerKey: request.botId,
-          workspaceId: context.workspaceId,
+          workspaceId: context.spaceId ?? context.workspaceId,
           ...(request.providerRef ? { providerRef: request.providerRef } : {}),
           regionId: this.config.regionId,
           flavorSlug: this.config.flavorSlug,

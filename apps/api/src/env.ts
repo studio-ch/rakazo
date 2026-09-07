@@ -1,4 +1,8 @@
-import { resolveDeploymentModel, resolveSandboxProvider } from "@rakazo/adapters";
+import {
+  resolveCloudAgentProvider,
+  resolveDeploymentModel,
+  resolveSandboxProvider,
+} from "@rakazo/adapters";
 import {
   resolveAuthSecret,
   resolveEncryptionKey,
@@ -6,9 +10,10 @@ import {
   resolveSupervisorToken,
 } from "@rakazo/core";
 
-export { resolveSandboxProvider } from "@rakazo/adapters";
+export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
 export interface AppEnv {
+  nodeEnv: string;
   databaseUrl: string;
   realtimeDatabaseUrl: string;
   authSecret: string;
@@ -24,6 +29,9 @@ export interface AppEnv {
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
   sandboxProvider: string;
+  cloudAgentProvider: string;
+  cloudAgentSpaceId: string | undefined;
+  cursorApiKey: string | undefined;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
   e2bApiKey: string | undefined;
@@ -40,6 +48,8 @@ export interface AppEnv {
   xcloudNetworkRef: string | undefined;
   xcloudAdminUsername: string | undefined;
   composioApiKey: string | undefined;
+  /** Optional integrations.sh-compatible catalog base URL. */
+  integrationsCatalogUrl: string | undefined;
   pipedreamClientId: string | undefined;
   pipedreamClientSecret: string | undefined;
   pipedreamProjectId: string | undefined;
@@ -48,6 +58,29 @@ export interface AppEnv {
   sendblueApiSecret: string | undefined;
   sendblueSigningSecret: string | undefined;
   sendbluePhoneNumber: string | undefined;
+  smtpUrl: string | undefined;
+  emailFrom: string | undefined;
+  emailEmulator: boolean;
+  slackBotToken: string | undefined;
+  slackSigningSecret: string | undefined;
+  whatsappAccessToken: string | undefined;
+  whatsappPhoneNumberId: string | undefined;
+  whatsappAppSecret: string | undefined;
+  whatsappVerifyToken: string | undefined;
+  telegramBotToken: string | undefined;
+  telegramWebhookSecret: string | undefined;
+  larkAppId: string | undefined;
+  larkAppSecret: string | undefined;
+  larkVerificationToken: string | undefined;
+  larkEncryptKey: string | undefined;
+  larkDomain: string | undefined;
+  /** Unknown chat senders auto-provision their own accounts when true. */
+  messagingOpenSignup: boolean;
+  /** Bot that owns team/external chat rooms on the messaging surface. */
+  teamChatBotId: string | undefined;
+  /** Optional model override for ambient engagement judging. */
+  teamChatJudgeProvider: string | undefined;
+  teamChatJudgeModel: string | undefined;
   defaultProvider: string;
   defaultModel: string;
   wakeupDriver: string;
@@ -66,10 +99,12 @@ export interface AppEnv {
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const authSecret = resolveAuthSecret(source);
   const sandboxProvider = resolveSandboxProvider(source);
+  const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
   return {
+    nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
     authSecret,
@@ -86,6 +121,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
     screenProxySecret: resolveScreenProxySecret(source),
     sandboxProvider,
+    cloudAgentProvider,
+    cloudAgentSpaceId: optional(source.CLOUD_AGENT_SPACE_ID),
+    cursorApiKey: optional(source.CURSOR_API_KEY),
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
     deploymentModelKey: deploymentModel.key,
@@ -103,6 +141,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     xcloudNetworkRef: optional(source.XCLOUD_NETWORK_REF),
     xcloudAdminUsername: optional(source.XCLOUD_ADMIN_USERNAME),
     composioApiKey: source.COMPOSIO_API_KEY,
+    integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
     pipedreamClientSecret: optional(source.PIPEDREAM_CLIENT_SECRET),
     pipedreamProjectId: optional(source.PIPEDREAM_PROJECT_ID),
@@ -112,6 +151,26 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendblueApiSecret: optional(source.SENDBLUE_API_SECRET),
     sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
+    smtpUrl: optional(source.SMTP_URL),
+    emailFrom: optional(source.EMAIL_FROM),
+    emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
+    slackBotToken: optional(source.SLACK_BOT_TOKEN),
+    slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
+    whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
+    whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
+    whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),
+    whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
+    telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
+    telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    larkAppId: optional(source.LARK_APP_ID),
+    larkAppSecret: optional(source.LARK_APP_SECRET),
+    larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
+    larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
+    larkDomain: optional(source.LARK_DOMAIN),
+    messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
+    teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
+    teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
+    teamChatJudgeModel: optional(source.TEAM_CHAT_JUDGE_MODEL),
     defaultProvider: deploymentModel.provider,
     defaultModel: deploymentModel.model,
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",

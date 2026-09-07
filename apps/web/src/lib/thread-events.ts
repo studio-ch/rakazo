@@ -16,6 +16,9 @@ import {
   reduceLiveMessageBlocks,
   runFailureError,
   subagentBlockFromPayload,
+  takeLiveMessage,
+  updateCloudAgentMessages,
+  updateMessageReaction,
   upsertMessageById,
 } from "@rakazo/core";
 
@@ -28,7 +31,8 @@ const runTriggers = new Set<Run["trigger"]>([
   "skill",
   "bot_message",
   "webhook",
-  "phone",
+  "messaging",
+  "cloud_agent",
 ]);
 
 function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Run {
@@ -56,22 +60,6 @@ function runFromStartedEvent(event: ProductEvent, previous: Run | undefined): Ru
   };
 }
 
-function takeLiveMessage(
-  messages: readonly ThreadMessage[],
-  liveId: string,
-): { previous: ThreadMessage | undefined; remaining: ThreadMessage[] } {
-  let previous: ThreadMessage | undefined;
-  const remaining: ThreadMessage[] = [];
-  for (const message of messages) {
-    if (message.id === liveId) {
-      previous = message;
-    } else if (!message.id.startsWith("progress:") || message.runId) {
-      remaining.push(message);
-    }
-  }
-  return { previous, remaining };
-}
-
 const computerStates: ReadonlySet<unknown> = new Set<ComputerStatus["state"]>([
   "stopped",
   "booting",
@@ -84,6 +72,49 @@ export function activeThreadRuns(
   snapshot: ThreadSnapshot | null,
 ): NonNullable<ThreadSnapshot["activeRuns"]> {
   return snapshot?.activeRuns ?? (snapshot?.run ? [snapshot.run] : []);
+}
+
+/**
+ * Reflect a committed direct-message send before its follow-up snapshot arrives.
+ *
+ * threads.send returns only after the message and run are durable. Keeping that
+ * receipt prevents a transient snapshot/SSE interruption from showing a stored
+ * user bubble with no working state. A matching live run always wins, and the
+ * next durable event or refresh still supplies the authoritative status.
+ */
+export function applyThreadSendReceipt(
+  snapshot: ThreadSnapshot | null,
+  receipt: { botId: string; runId: string; taskId: string; createdAt?: string },
+  terminalRunIds: ReadonlySet<string> = new Set(),
+): ThreadSnapshot | null {
+  if (
+    !snapshot ||
+    snapshot.groupId ||
+    snapshot.botId !== receipt.botId ||
+    snapshot.run?.id === receipt.runId ||
+    terminalRunIds.has(receipt.runId)
+  ) {
+    return snapshot;
+  }
+  const currentRuns = activeThreadRuns(snapshot);
+  if (currentRuns.some((run) => isActive(run.status as RunStatus))) return snapshot;
+  const createdAt = receipt.createdAt ?? new Date().toISOString();
+  const run: Run = {
+    id: receipt.runId,
+    botId: receipt.botId,
+    threadId: snapshot.threadId,
+    taskId: receipt.taskId,
+    status: "queued",
+    trigger: "user",
+    routineId: null,
+    modelProvider: null,
+    modelId: null,
+    error: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt,
+  };
+  return { ...snapshot, run, activeRuns: [run] };
 }
 
 /** Reason the newest run stopped, until the reader dismisses that run's failure. */
@@ -215,9 +246,11 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "thread.cleared" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
+    event.type === "thread.cloud_agent" ||
     event.type === "agent.tool.called" ||
     event.type === "thread.message.created" ||
     event.type === "thread.message.updated" ||
+    event.type === "thread.message.reaction" ||
     event.type === "run.started" ||
     event.type === "run.waiting_input" ||
     event.type === "computer.takeover.requested" ||
@@ -269,11 +302,18 @@ export function reduceThreadSnapshot(
   }
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
     const status = event.type === "run.waiting_input" ? "waiting_input" : "waiting_takeover";
-    const runChanged = Boolean(
-      prev.run && prev.run.id === event.runId && prev.run.status !== status,
+    const runId = event.runId;
+    const knownInRun = Boolean(runId && prev.run?.id === runId);
+    const knownInActive = Boolean(
+      runId && prev.activeRuns?.some((candidate) => candidate.id === runId),
     );
-    const activeRunChanged = prev.activeRuns?.some(
-      (candidate) => candidate.id === event.runId && candidate.status !== status,
+    // Peer bot_message runs are omitted from snapshots while busy; the first wait
+    // event is how an open thread learns they need ask/takeover UI.
+    const needsInsert = Boolean(runId) && !knownInRun && !knownInActive;
+    const runChanged = Boolean(knownInRun && prev.run && prev.run.status !== status);
+    const activeRunChanged = Boolean(
+      knownInActive &&
+        prev.activeRuns?.some((candidate) => candidate.id === runId && candidate.status !== status),
     );
     const members = updateMemberStatus(prev.members, event.botId, status);
     // Ask pauses delete progress events server-side; drop the live bubble so a missed
@@ -286,10 +326,41 @@ export function reduceThreadSnapshot(
     if (
       !runChanged &&
       !activeRunChanged &&
+      !needsInsert &&
       members === prev.members &&
       messages === prev.messages
     ) {
       return prev;
+    }
+    if (needsInsert && runId) {
+      const waitingRun: Run = {
+        id: runId,
+        botId: event.botId,
+        threadId: event.threadId,
+        taskId: runId,
+        status,
+        trigger: "bot_message",
+        routineId: null,
+        modelProvider: null,
+        modelId: null,
+        error: null,
+        startedAt: event.createdAt,
+        completedAt: null,
+        createdAt: event.createdAt,
+      };
+      const baseActive = prev.activeRuns ?? (prev.run ? [prev.run] : []);
+      const activeRuns = [...baseActive.filter((candidate) => candidate.id !== runId), waitingRun];
+      const promoteWaiting =
+        !prev.run ||
+        (prev.run.status !== "waiting_input" && prev.run.status !== "waiting_takeover");
+      return {
+        ...prev,
+        cursor: event.seq,
+        members,
+        messages,
+        run: promoteWaiting ? waitingRun : prev.run,
+        activeRuns,
+      };
     }
     return {
       ...prev,
@@ -299,7 +370,7 @@ export function reduceThreadSnapshot(
       run: runChanged && prev.run ? { ...prev.run, status } : prev.run,
       activeRuns: activeRunChanged
         ? prev.activeRuns?.map((candidate) =>
-            candidate.id === event.runId ? { ...candidate, status } : candidate,
+            candidate.id === runId ? { ...candidate, status } : candidate,
           )
         : prev.activeRuns,
     };
@@ -391,6 +462,21 @@ export function reduceThreadSnapshot(
     }
     return { ...prev, cursor: event.seq, messages: [...without, next, ...kept] };
   }
+
+  if (event.type === "thread.cloud_agent") {
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: updateCloudAgentMessages(prev.messages, event.payload ?? {}),
+    };
+  }
+  if (event.type === "thread.message.reaction") {
+    return {
+      ...prev,
+      cursor: event.seq,
+      messages: updateMessageReaction(prev.messages, event.payload ?? {}),
+    };
+  }
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
@@ -402,6 +488,7 @@ export function reduceThreadSnapshot(
       blocks,
       botId: event.botId,
       runId: event.runId,
+      thumbsUp: event.payload.thumbsUp === true,
       createdAt: event.createdAt,
     };
     const replacedSubagentIds = new Set(
@@ -462,6 +549,13 @@ export function computerPanelAutoUsesBoot(
   return action === "boot" || action === "recover-screen";
 }
 
+export function computerPanelNeedsMaintenance(
+  state: ComputerStatus["state"] | undefined,
+  booting: boolean,
+): boolean {
+  return !booting && (state === "error" || state === "stopped");
+}
+
 export function reduceComputerStatus(
   prev: ComputerStatus | null,
   event: ProductEvent,
@@ -469,7 +563,19 @@ export function reduceComputerStatus(
   if (!prev) return prev;
   if (!isComputerStatusEvent(event)) return prev;
   if (event.type === "computer.takeover.requested") {
-    return prev.busyBotName === null ? prev : { ...prev, busyBotName: null };
+    const retainedControl = event.payload.retainedControl === true;
+    const next = {
+      ...prev,
+      busyBotName: null,
+      takeoverRequested: true,
+      ...(retainedControl ? {} : { controlHolder: "none" as const, controlBotId: null }),
+    };
+    return prev.busyBotName === next.busyBotName &&
+      prev.takeoverRequested === next.takeoverRequested &&
+      prev.controlHolder === next.controlHolder &&
+      prev.controlBotId === next.controlBotId
+      ? prev
+      : next;
   }
   if (event.type === "computer.takeover.granted") {
     const takeoverRequested = event.payload.takeoverRequested === true;

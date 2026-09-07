@@ -9,13 +9,14 @@ import {
   type PrismaClient,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { ExecutorDeps } from "./executor.js";
 
 export async function handoffToGroupBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
   run: {
     id: string;
-    workspaceId: string;
+    spaceId: string;
     threadId: string;
     botId: string;
     userId: string;
@@ -46,7 +47,7 @@ export async function handoffToGroupBot(
       tx.run.findFirst({
         where: {
           id: run.id,
-          workspaceId: run.workspaceId,
+          spaceId: run.spaceId,
           threadId: run.threadId,
           botId: run.botId,
           userId: run.userId,
@@ -134,7 +135,7 @@ export async function handoffToGroupBot(
     });
     const task = await tx.task.create({
       data: {
-        workspaceId: run.workspaceId,
+        spaceId: run.spaceId,
         botId: targetId,
         threadId: run.threadId,
         userId: run.userId,
@@ -144,7 +145,7 @@ export async function handoffToGroupBot(
     });
     const nextRun = await tx.run.create({
       data: {
-        workspaceId: run.workspaceId,
+        spaceId: run.spaceId,
         botId: targetId,
         threadId: run.threadId,
         taskId: task.id,
@@ -155,7 +156,7 @@ export async function handoffToGroupBot(
       },
     });
     const event = await appendEventInTransaction(tx, {
-      workspaceId: run.workspaceId,
+      spaceId: run.spaceId,
       threadId: run.threadId,
       botId: run.botId,
       type: "group.handoff",
@@ -172,11 +173,11 @@ export async function handoffToGroupBot(
   });
   if ("error" in committed) return committed;
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
-    console.error("group handoff realtime notification", error);
+    getLogger().error("group handoff realtime notification", error);
   });
   await deps.jobs.enqueue(runContinueJob(committed.runId)).catch((error) => {
     // The queued run is durable and the job reconciler will repair a missed immediate wake.
-    console.error("group handoff enqueue", error);
+    getLogger().error("group handoff enqueue", error);
   });
   return {
     ok: true,

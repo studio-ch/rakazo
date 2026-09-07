@@ -4,10 +4,12 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 loadRootEnv();
 
 import {
+  ChatSdkMessagingSurface,
   createBackgroundJobHandlers,
+  createCloudAgentConnection,
   createConnectorStack,
   createJobReconciler,
-  createPhoneContextLoader,
+  createMessagingContextLoader,
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
@@ -20,26 +22,31 @@ import {
   InMemoryJobQueue,
   InstalledConnectorProvider,
   isComposioEnabled,
-  isPhoneSurfaceEnabled,
+  isMessagingSurfaceEnabled,
   isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
+  messagingEnvFromProcess,
+  messagingPlatformsFromEnv,
   PiAgentRuntime,
   PipedreamConnector,
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
+  reconcileCloudAgents,
   resolveDeploymentModel,
   resolveSandboxProvider,
   ScriptedAgentRuntime,
-  SendBlueMessagingProvider,
-  sendBlueConfigFromEnv,
-  WorkspaceMemoryProviderResolver,
+  SpaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
+import { SERVICE_NAMES } from "@rakazo/logging";
+import { createRootLogger } from "@rakazo/logging/axiom";
 import { MarkdownMemoryStore } from "@rakazo/memory";
+
+const logger = createRootLogger(SERVICE_NAMES.worker);
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -101,14 +108,16 @@ async function main() {
   const pipedream = isPipedreamEnabled(pipedreamConfig)
     ? new PipedreamConnector(pipedreamConfig)
     : undefined;
-  const sendBlueConfig = sendBlueConfigFromEnv({
-    sendblueApiKeyId: process.env.SENDBLUE_API_KEY_ID,
-    sendblueApiSecret: process.env.SENDBLUE_API_SECRET,
-    sendblueSigningSecret: process.env.SENDBLUE_SIGNING_SECRET,
-    sendbluePhoneNumber: process.env.SENDBLUE_PHONE_NUMBER,
-  });
-  const messaging = isPhoneSurfaceEnabled(sendBlueConfig, deploymentModelKey)
-    ? new SendBlueMessagingProvider(sendBlueConfig)
+  // pollInboundMessages stays false (the default) here: this process
+  // only ever sends outbound (messaging.deliver jobs). It must never poll
+  // Telegram — that would steal the single getUpdates slot away from the
+  // API process, which is the one with the inbound sink actually wired up.
+  const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env));
+  const messaging = isMessagingSurfaceEnabled(messagingPlatforms, {
+    deploymentModelKey,
+    openSignup: process.env.MESSAGING_OPEN_SIGNUP === "true",
+  })
+    ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY), undefined, [
     new InstalledConnectorProvider(prisma, secrets),
@@ -117,12 +126,14 @@ async function main() {
   ]);
   const connector = stack.destination;
   await connector.start();
-  const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
+  const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
   const jobHost: JobWorkerHost = inMemoryJobs ?? new GraphileJobWorkerHost(databaseUrl);
+  // One provider instance so emulator launches and polls share the same Map.
+  const cloudAgent = createCloudAgentConnection();
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -134,15 +145,20 @@ async function main() {
     connector: stack.connector,
     connectors: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [deploymentModelKey ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
+    secrets: [
+      deploymentModelKey ?? "",
+      process.env.COMPOSIO_API_KEY ?? "",
+      process.env.CURSOR_API_KEY ?? "",
+    ].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
-    phone: messaging ? createPhoneContextLoader(prisma) : undefined,
+    messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
+    cloudAgent,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -158,6 +174,7 @@ async function main() {
     memoryProviders,
     deploymentModelKey,
     messaging,
+    cloudAgent,
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({
@@ -165,6 +182,7 @@ async function main() {
     jobs,
     events,
     leadership: createPostgresReconciliationLeadership(pool),
+    reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
   });
   reconciler.start();
 
@@ -172,22 +190,27 @@ async function main() {
   const stop = async () => {
     if (stopping) return;
     stopping = true;
-    await reconciler.stop();
-    await jobHost.stop();
-    await jobs.close();
-    await realtime.close();
-    await connector.stop();
-    await mcp.close();
-    await prisma.$disconnect().catch(() => undefined);
-    await pool.end().catch(() => undefined);
+    try {
+      await reconciler.stop();
+      await jobHost.stop();
+      await jobs.close();
+      await realtime.close();
+      await connector.stop();
+      await mcp.close();
+      await prisma.$disconnect().catch(() => undefined);
+      await pool.end().catch(() => undefined);
+    } finally {
+      await logger.flush({ timeoutMs: 2_000 });
+    }
   };
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
 
-  console.log("rakazo worker ready");
+  logger.info("worker ready");
 }
 
-main().catch((error) => {
-  console.error(error);
+main().catch(async (error) => {
+  logger.error("worker startup failed", error);
+  await logger.flush({ timeoutMs: 2_000 });
   process.exit(1);
 });

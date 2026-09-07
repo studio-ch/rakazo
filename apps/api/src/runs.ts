@@ -34,14 +34,14 @@ export function activityNotificationsEnabled(
   return groupId !== null || notifyOnFinish;
 }
 
-export async function listWorkspaceRuns(
+export async function listSpaceRuns(
   prisma: PrismaClient,
   actor: Actor,
   filter: "active" | "recent",
 ): Promise<RunActivityRow[]> {
   const rows = await prisma.run.findMany({
     where: {
-      workspaceId: actor.workspaceId,
+      spaceId: actor.spaceId,
       userId: actor.userId,
       bot: { archivedAt: null },
       ...(filter === "active"
