@@ -21,12 +21,11 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toHaveCount(0);
 
   await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
+  const moveMenu = page.getByRole("menu", { name: "Move to", exact: true });
+  await expect(moveMenu).toBeVisible();
   await captureScreenshot(page, testInfo, "move-to-section-menu");
-  await page
-    .getByRole("menu", { name: /Move Chief to section/ })
-    .getByText("New section")
-    .click();
+  await moveMenu.getByText("New section").click();
   const dialog = page.getByRole("dialog", { name: "New section" });
   await dialog.getByLabel("Name").fill("Projects");
   await dialog.getByRole("button", { name: "Create" }).click();
@@ -41,9 +40,9 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await expect(projects).toContainText("Chief");
 
   await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
   await page
-    .getByRole("menu", { name: /Move Chief to section/ })
+    .getByRole("menu", { name: "Move to", exact: true })
     .getByRole("menuitem", { name: "Unassigned", exact: true })
     .click();
   await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText("Chief");
@@ -94,7 +93,7 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
     releaseStaleList = resolve;
   });
   let interceptedList = false;
-  await page.route("**/rpc/bots/list", async (route) => {
+  await page.route("**/rpc/spaces/list", async (route) => {
     if (interceptedList) {
       await route.continue();
       return;
@@ -231,9 +230,9 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
   await group.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
   await page
-    .getByRole("menu", { name: /Move Group menu to section/ })
+    .getByRole("menu", { name: "Move to", exact: true })
     .getByRole("menuitem", { name: "New section", exact: true })
     .click();
   const sectionDialog = page.getByRole("dialog", { name: "New section" });
@@ -246,6 +245,7 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await expect(
     page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),
   ).toBeVisible();
+  await captureScreenshot(page, testInfo, "group-clear-conversation-confirmation");
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(
     page.getByRole("alertdialog", { name: "Clear Group menu’s conversation?" }),

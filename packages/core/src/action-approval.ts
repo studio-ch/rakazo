@@ -3,6 +3,9 @@ import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/con
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_act",
   "list_files",
   "read_file",
   "write_file",
@@ -19,7 +22,34 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "schedule_cancel",
 ]);
 
-const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set(["destination.write", "delete_bot", "archive_bot"]);
+const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "destination.write",
+  "delete_bot",
+  "archive_bot",
+  "secret_request",
+  "forget_secret",
+  "cloud_agent_launch",
+  "cloud_agent_reply",
+  "cloud_agent_cancel",
+]);
+const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space"]);
+
+const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
+  "browser_snapshot",
+  "cloud_agent_status",
+  "computer_observe",
+  "list_files",
+  "list_secrets",
+  "read_file",
+  "recall_memory",
+  "request_takeover",
+  "run_subagent",
+  "schedule_list",
+  "scratchpad_list",
+  "skill_read",
+  "web_fetch",
+  "web_search",
+]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|_)(get|list|search|find|read)(_|$)/i;
 const MUTATING_CONNECTOR_PATTERN =
@@ -53,9 +83,27 @@ export function connectorToolRequiresApproval(toolName: string): boolean {
 
 export function toolRequiresApproval(toolName: string, viaConnector: boolean): boolean {
   if (APPROVAL_EXEMPT_TOOLS.has(toolName)) return false;
+  if (toolRequiresExplicitApproval(toolName)) return true;
   if (APPROVAL_REQUIRED_BUILTIN_TOOLS.has(toolName)) return true;
   if (viaConnector) return connectorToolRequiresApproval(toolName);
   return false;
+}
+
+/** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
+export function toolRequiresExplicitApproval(toolName: string): boolean {
+  return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName);
+}
+
+/** External webhook runs may inspect state unattended, but side effects always need the owner. */
+export function unattendedTriggerToolRequiresApproval(
+  trigger: string,
+  toolName: string,
+  viaConnector: boolean,
+): boolean {
+  if (trigger !== "webhook") return false;
+  return viaConnector
+    ? connectorToolRequiresApproval(toolName)
+    : !UNATTENDED_SAFE_BUILTIN_TOOLS.has(toolName);
 }
 
 function categoryMatches(category: string, toolName: string, connectorKind: string): boolean {

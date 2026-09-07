@@ -50,4 +50,24 @@ describe("buildApprovalAskBlock", () => {
     expect(block.detail?.startsWith("Sends email outside the draft-only task.")).toBe(true);
     expect(block.detail).toContain("to: person@example.test");
   });
+
+  it("uses a one-time create or cancel choice for a new security boundary", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "create_space",
+      { name: "Customer support" },
+      [],
+    );
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Create space “Customer support”?",
+      actions: [
+        { id: "allow", label: "Create space", outcome: "created" },
+        { id: "deny", label: "Cancel", outcome: "cancelled" },
+      ],
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).toContain("stay separate from other spaces");
+  });
 });

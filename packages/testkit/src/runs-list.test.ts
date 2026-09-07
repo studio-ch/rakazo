@@ -155,7 +155,7 @@ describeRunsList("runs.list activity tracker", () => {
     const groupThread = await prisma.thread.findUniqueOrThrow({ where: { groupId: group.id } });
     const task = await prisma.task.create({
       data: {
-        workspaceId: groupThread.workspaceId,
+        spaceId: groupThread.spaceId,
         userId: groupThread.userId,
         botId: botA.id,
         threadId: groupThread.id,
@@ -165,7 +165,7 @@ describeRunsList("runs.list activity tracker", () => {
     });
     await prisma.run.create({
       data: {
-        workspaceId: groupThread.workspaceId,
+        spaceId: groupThread.spaceId,
         userId: groupThread.userId,
         botId: botA.id,
         threadId: groupThread.id,
@@ -195,7 +195,7 @@ async function seedRun(
   const thread = await prisma.thread.findUniqueOrThrow({ where: { botId } });
   const task = await prisma.task.create({
     data: {
-      workspaceId: thread.workspaceId,
+      spaceId: thread.spaceId,
       userId: thread.userId,
       botId,
       threadId: thread.id,
@@ -205,7 +205,7 @@ async function seedRun(
   });
   return prisma.run.create({
     data: {
-      workspaceId: thread.workspaceId,
+      spaceId: thread.spaceId,
       userId: thread.userId,
       botId,
       threadId: thread.id,

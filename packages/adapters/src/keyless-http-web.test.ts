@@ -13,7 +13,7 @@ import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 const ctx: AdapterContext = {
   operationId: "1",
   traceId: "1",
-  workspaceId: "w",
+  spaceId: "w",
   userId: "u",
   signal: new AbortController().signal,
 };

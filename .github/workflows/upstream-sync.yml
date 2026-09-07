@@ -28,6 +28,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Preserve reviewed commits and manual conflict resolutions until this PR is closed.
+          existing_pr="$(gh pr list --base main --head automation/xcloud-upstream-sync --state open --json url --jq '.[0].url // empty')"
+          if [[ -n "$existing_pr" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "An upstream compatibility PR is already open: $existing_pr" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           git remote add upstream https://github.com/elie222/rakazo.git
           git fetch upstream main
           if git merge-base --is-ancestor upstream/main origin/main; then
@@ -37,7 +44,16 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git switch --force-create automation/xcloud-upstream-sync origin/main
-          git merge --no-edit upstream/main
+          if ! git merge --no-edit upstream/main; then
+            {
+              echo '## Upstream merge needs manual resolution'
+              echo 'No remote branch was changed. Resolve these files on the compatibility branch and open a PR:'
+              git diff --name-only --diff-filter=U
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort
+            echo '::error::Upstream conflicts require a manual compatibility PR; see the job summary.'
+            exit 1
+          fi
           git push --force-with-lease origin automation/xcloud-upstream-sync
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "upstream_sha=$(git rev-parse upstream/main)" >> "$GITHUB_OUTPUT"
@@ -46,7 +62,14 @@ jobs:
               --base main \
               --head automation/xcloud-upstream-sync \
               --title "chore: verify current Rakazo upstream" \
-              --body "Automated compatibility merge of elie222/rakazo@$(git rev-parse upstream/main). This PR is intentionally blocking: review adapter-kit and SandboxProvider changes, then update the Xcloud compatibility pin only after CI and a macOS acceptance run pass."
+              --body "## Why
+          Keep the Xcloud distribution compatible with current upstream changes.
+
+          ## Changes
+          Merge upstream commit $(git rev-parse upstream/main). Review adapter-kit and SandboxProvider changes before accepting compatibility.
+
+          ## Testing
+          The sync workflow runs adapter tests and typechecking. Keep the compatibility pin unchanged until CI and a macOS acceptance run pass."
           fi
       - uses: pnpm/action-setup@v4
         if: steps.merge.outputs.changed == 'true'

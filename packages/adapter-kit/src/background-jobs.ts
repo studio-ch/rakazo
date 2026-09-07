@@ -19,7 +19,8 @@ const payloadSchemas = {
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
-  "phone.deliver": z.object({ runId: z.string().min(1).optional() }),
+  "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
+  "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -113,11 +114,11 @@ export function historyCompactJobKey(threadId: string): string {
   return `history.compact:${threadId}`;
 }
 
-export function phoneDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
+export function messagingDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
   return {
-    name: "phone.deliver",
+    name: "messaging.deliver",
     payload: runId ? { runId } : {},
-    replaceKey: `phone.deliver:${runId ?? "drain"}`,
+    replaceKey: `messaging.deliver:${runId ?? "drain"}`,
     ...(availableAt ? { availableAt } : {}),
   };
 }
@@ -127,5 +128,21 @@ export function historyCompactJob(threadId: string): BackgroundJob {
     name: "history.compact",
     payload: { threadId },
     replaceKey: historyCompactJobKey(threadId),
+  };
+}
+
+export function cloudAgentPollJobKey(agentId: string): string {
+  return `cloud_agent.poll:${agentId}`;
+}
+
+export function cloudAgentPollJob(
+  payload: BackgroundJobPayloads["cloud_agent.poll"],
+  availableAt?: Date,
+): BackgroundJob {
+  return {
+    name: "cloud_agent.poll",
+    payload,
+    replaceKey: cloudAgentPollJobKey(payload.agentId),
+    ...(availableAt ? { availableAt } : {}),
   };
 }

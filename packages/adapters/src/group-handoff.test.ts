@@ -4,7 +4,7 @@ import { handoffToGroupBot } from "./group-handoff.js";
 
 const run = {
   id: "run-a",
-  workspaceId: "workspace-1",
+  spaceId: "workspace-1",
   threadId: "thread-1",
   botId: "bot-a",
   userId: "user-1",

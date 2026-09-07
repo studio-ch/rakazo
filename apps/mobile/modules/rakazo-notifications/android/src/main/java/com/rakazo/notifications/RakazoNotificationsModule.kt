@@ -15,7 +15,7 @@ class RakazoNotificationsModule : Module() {
       NotificationStorage(context()).settings.toMap()
     }
 
-    AsyncFunction("setSettings") { value: Map<String, Boolean>, endpoint: String, token: String ->
+    AsyncFunction("setSettings") { value: Map<String, Boolean>, endpoint: String, token: String, spaceId: String ->
       val context = context()
       val storage = NotificationStorage(context)
       if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
@@ -23,6 +23,7 @@ class RakazoNotificationsModule : Module() {
       }
       storage.endpoint = endpoint
       storage.token = token
+      storage.spaceId = spaceId
       storage.settings = NotificationSettings.fromMap(value)
       if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
         RakazoNotificationService.start(context)
@@ -31,7 +32,7 @@ class RakazoNotificationsModule : Module() {
       }
     }
 
-    AsyncFunction("resume") { endpoint: String, token: String ->
+    AsyncFunction("resume") { endpoint: String, token: String, spaceId: String ->
       val context = context()
       if (endpoint.isNotBlank() && !isAllowedNotificationEndpoint(endpoint)) {
         RakazoNotificationService.stop(context)
@@ -39,6 +40,7 @@ class RakazoNotificationsModule : Module() {
         val storage = NotificationStorage(context)
         storage.endpoint = endpoint
         storage.token = token
+        storage.spaceId = spaceId
         if (storage.settings.liveConnection && endpoint.isNotBlank() && token.isNotBlank()) {
           RakazoNotificationService.start(context)
         }
@@ -49,7 +51,9 @@ class RakazoNotificationsModule : Module() {
       val context = context()
       if (clearSession) {
         RakazoNotificationService.clearSession(context)
-        NotificationStorage(context).token = ""
+        val storage = NotificationStorage(context)
+        storage.token = ""
+        storage.spaceId = ""
       } else {
         RakazoNotificationService.stop(context)
       }

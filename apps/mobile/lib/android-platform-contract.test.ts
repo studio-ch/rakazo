@@ -6,6 +6,14 @@ import { describe, expect, it } from "vitest";
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Android mobile platform contract", () => {
+  it("keeps authentication actions reachable while the keyboard is open", () => {
+    const signIn = readFileSync(resolve(mobileRoot, "app/sign-in.tsx"), "utf8");
+    expect(signIn).toContain("KeyboardAvoidingView");
+    expect(signIn).toContain("Keyboard.dismiss");
+    expect(signIn).toContain("keyboardDismissMode");
+    expect(signIn).toContain("ScrollView");
+  });
+
   it("pins the thread footer above the keyboard and device safe area", () => {
     const config = JSON.parse(readFileSync(resolve(mobileRoot, "app.json"), "utf8"));
     const packageJson = JSON.parse(readFileSync(resolve(mobileRoot, "package.json"), "utf8"));
@@ -37,7 +45,7 @@ describe("Android mobile platform contract", () => {
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
     expect(service).toContain("android.requestPromotedOngoing");
     expect(service).toContain("liveStatusIcon(primary, avatarStyle)");
-    expect(service).toContain('rpc(endpoint, token, "me"');
+    expect(service).toContain('rpc(endpoint, token, spaceId, "me"');
     expect(service).not.toContain("showStarting");
     expect(service).not.toContain("catch (_: IOException) {\n        stop()");
     expect(service).toContain("Expo push owns background completion and attention delivery");
@@ -47,6 +55,7 @@ describe("Android mobile platform contract", () => {
     expect(module).not.toContain("settings.copy(liveConnection = false)");
     expect(module).toContain("RakazoNotificationService.clearSession(context)");
     expect(module).toContain("isAllowedNotificationEndpoint(endpoint)");
+    expect(module).toContain("storage.spaceId = spaceId");
     expect(allowlist).toContain("isAllowedNotificationEndpoint");
     expect(allowlist).toContain('scheme == "https"');
     expect(allowlist).toContain("isLanOrLocalHost");
@@ -54,6 +63,12 @@ describe("Android mobile platform contract", () => {
     expect(live).toMatch(
       /export async function resumeLiveNotifications[\s\S]*normalizeApiBase\(endpoint\)[\s\S]*nativeNotifications\.resume\(parsed\.url/,
     );
+    expect(service).toContain('connection.setRequestProperty("x-rakazo-space-id", spaceId)');
+    expect(service).toContain("storage.spaceId.isBlank()");
+    expect(service).toContain("private fun prepareHistorySpace(");
+    expect(service).toContain("knownCompleted.clear()");
+    expect(service).toContain("alertedAttention.clear()");
+    expect(service).toContain("SEEN_RUNS_SPACE_ID");
     expect(service).toContain(
       "getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit().clear()",
     );
@@ -83,6 +98,11 @@ describe("Android mobile platform contract", () => {
     );
     expect(service).not.toContain("private fun postCompletion(");
     expect(service).toContain('"rakazo://group-thread?groupId=');
+    expect(service).toMatch(/&spaceId=\$\{Uri\.encode\(run\.spaceId\)\}/);
+    expect(service).toContain('putString("rakazo.spaceId", run.spaceId)');
+    expect(thread).toContain("export default function ThreadRoute()");
+    expect(thread).toContain("selectSpace(requestedSpaceId)");
+    expect(thread).toContain("routeMatchesSelectedSpace) return <Thread />");
     expect(service).toContain('if (run.groupId != null) put("groupId", run.groupId)');
     expect(service).toContain('if (message.optString("runId") != run.runId) continue');
     expect(service).toContain('if (block.optString("kind") == "handoff") return null');
@@ -119,6 +139,17 @@ describe("Android mobile platform contract", () => {
     expect(notifications).toContain("dismissNotificationAsync");
   });
 
+  it("renders the per-message transport in every native channel-message path", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    expect(
+      thread.match(/messagingProviderLabel\(block\.provider, block\.transport\)/g),
+    ).toHaveLength(2);
+    expect(thread).toContain(
+      "messagingProviderLabel(channelMessage.provider, channelMessage.transport)",
+    );
+    expect(thread).not.toMatch(/messagingProviderLabel\((?:block|channelMessage)\.provider\)/);
+  });
+
   it("reconciles finished agents and opens ordinary chats at the latest message", () => {
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
     const scroll = readFileSync(resolve(mobileRoot, "lib/thread-scroll.ts"), "utf8");
@@ -137,6 +168,32 @@ describe("Android mobile platform contract", () => {
     expect(thread).toContain("agents working");
   });
 
+  it("keeps send and stop separate while steering active work", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const stopStart = thread.indexOf("async function stop()");
+    const stopSource = thread.slice(stopStart, thread.indexOf("const answerMessage", stopStart));
+    expect(stopStart).toBeGreaterThan(-1);
+    expect(thread).toContain('accessibilityLabel={t("Send")}');
+    expect(thread).toContain('accessibilityLabel={t("Stop")}');
+    expect(thread).not.toContain("Messages sent now guide the next turn.");
+    expect(thread).not.toContain("Steer ");
+    expect(thread).not.toContain("steering message");
+    expect(thread).toContain('t("Message {name}"');
+    expect(thread).toContain("const clientNonce = newClientNonce()");
+    expect(thread).toContain("Work stopped, but the thread could not refresh");
+    expect(stopSource).toContain("const targetBotId = botId;");
+    expect(stopSource).toContain("const targetGroupId = groupId;");
+    expect(stopSource).toContain(
+      "targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },",
+    );
+    expect(stopSource).toMatch(
+      /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*setError\(err instanceof Error \? err\.message : t\("Failed to stop work"\)\);/,
+    );
+    expect(stopSource).toMatch(
+      /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*(?:const detail = [^\n]+;\s*)?setError\(t\("Work stopped, but the thread could not refresh: \{detail\}", \{ detail \}\)\);/,
+    );
+  });
+
   it("shows agent notification silence in the menu, inbox avatar, and DM header only", () => {
     const index = readFileSync(resolve(mobileRoot, "app/index.tsx"), "utf8");
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
@@ -146,7 +203,7 @@ describe("Android mobile platform contract", () => {
     expect(menu).toContain("Resume notifications");
     expect(index).toContain("muted={!bot.notifyOnFinish}");
     expect(thread).toContain("muted={!currentBot.notifyOnFinish}");
-    expect(avatar).toContain('accessibilityLabel="Notifications silenced"');
+    expect(avatar).toContain('accessibilityLabel={t("Notifications silenced")}');
     expect(avatar).toContain('android="notifications-off"');
     expect(thread.match(/muted=\{/g)).toHaveLength(1);
   });
