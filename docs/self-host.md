@@ -447,9 +447,8 @@ application traffic queued indefinitely.
 
 ### Published images and tags
 
-`.github/workflows/publish-server-image.yml` publishes to `ghcr.io/<owner>/<repo>/…`, derived from
-`${{ github.repository }}` rather than hardcoded, so a fork's CI fills the fork's own namespace. For
-this repository that is:
+`.github/workflows/publish-server-image.yml` publishes the Xcloud distribution to these
+explicitly configured image names:
 
 | Image | Contents |
 | --- | --- |
@@ -462,15 +461,15 @@ plus Postgres. The supervisor runs from the app image on the internal network on
 published supervisor image, and no host port). Production Compose (`docker-compose.prod.yml`) can
 also pull the same app tags once `RAKAZO_IMAGE_TAG` is set to a published value.
 
-If you deploy from your own fork, set `RAKAZO_IMAGE` and `RAKAZO_UPDATER_IMAGE` to your namespace —
-your CI cannot publish into someone else's.
+If you create another fork, update all three image matrices in the publish workflow and set
+`RAKAZO_IMAGE`, `RAKAZO_COMPUTER_IMAGE`, and `RAKAZO_UPDATER_IMAGE` to that namespace.
 
 | Tag | Published on | Moves? |
 | --- | --- | --- |
 | `local` | nothing — built locally by `up --build` | rebuilt in place |
 | `local-<full-commit>` | nothing — built on the server by a fork update | never |
-| `vX.Y.Z`, `vX.Y` | release tags | conventionally no / on patch releases |
-| `latest` | stable `vX.Y.Z` tags only (not prereleases) | yes, to the newest stable release |
+| `vX.Y.Z` | `xcloud-vX.Y.Z` release tags | conventionally no |
+| `latest` | stable `xcloud-vX.Y.Z` tags only (not prereleases) | yes, to the newest stable release |
 | `sha-<full-commit>` | every push and manual run | source-addressed; used by the updater sidecar |
 | `edge` | pushes to main | yes, to the newest main build |
 
@@ -498,10 +497,11 @@ so a later tag move cannot change rollback content. Do not prune the previous ap
 until the next update has been accepted. If it is missing, rollback fails closed instead of pulling
 new content under an old tag.
 
-To populate the registry the first time, run the workflow manually (`workflow_dispatch`) or push a
-`v*` tag. A manual run produces `sha-<full-commit>`; only a stable `vX.Y.Z` tag (no prerelease
-suffix) produces `latest`, and any `v*` tag produces semver tags. The updater ignores prereleases
-and refuses the official path until a stable `vX.Y.Z` exists.
+To populate the registry the first time, run the workflow manually (`workflow_dispatch`) or push an
+`xcloud-v*` tag. A manual run produces `sha-<full-commit>`; only a stable `xcloud-vX.Y.Z` tag
+(no prerelease suffix) produces `latest`. Release images omit the `xcloud-` tag prefix.
+For Xcloud deployments, follow the explicit image pins and acceptance gate in
+[Xcloud provider](./xcloud-provider.md).
 
 ### Updater sidecar
 
