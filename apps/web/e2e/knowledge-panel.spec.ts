@@ -163,7 +163,30 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
       "Open with a warm greeting.",
     ].join("\n"),
   );
-  await knowledge.getByRole("button", { name: "Save", exact: true }).click();
+  // Keep the post-save list refresh pending: the old row must not advertise
+  // clickability while openSkill still refuses selections during that refresh.
+  let refreshStarted = false;
+  let releaseRefresh = () => {};
+  const refreshGate = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  await page.route(
+    "**/rpc/agentSkills/list",
+    async (route) => {
+      refreshStarted = true;
+      await refreshGate;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  try {
+    await knowledge.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => refreshStarted).toBe(true);
+    await expect(skillRow).toBeVisible();
+    await expect(skillRow).toBeDisabled();
+  } finally {
+    releaseRefresh();
+  }
   await skillRow.click();
   await expect(editor).toHaveValue(/warm greeting/);
   await knowledge.getByRole("button", { name: "Delete", exact: true }).click();

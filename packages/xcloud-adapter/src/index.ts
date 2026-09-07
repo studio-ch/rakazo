@@ -230,6 +230,20 @@ export class XcloudSandboxProvider implements SandboxProvider {
     while (true) {
       const dto = await this.computer(computer.providerRef, context.signal);
       if (dto.state === "running" && dto.agentStatus === "healthy") {
+        const response = await this.request(
+          `/v1/xcloud/computers/${encodeURIComponent(computer.providerRef)}/session/prepare`,
+          { method: "POST" },
+          context.signal,
+        );
+        const session = (await response.json()) as { state?: string };
+        if (session.state !== "ready") {
+          if (session.state !== "pending")
+            throw new Error("Xcloud returned an invalid GUI session state");
+          if (Date.now() >= deadline)
+            throw new Error("timed out waiting for the Xcloud macOS desktop session");
+          await sleep(this.config.preparePollMs ?? 2_000, context.signal);
+          continue;
+        }
         const prepared = await this.collect(
           computer,
           { argv: ["/bin/mkdir", "-p", "--", dto.workspaceRoot], timeoutMs: 60_000 },

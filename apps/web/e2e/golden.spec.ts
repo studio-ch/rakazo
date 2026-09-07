@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  isExpectedAuthCapabilitiesAbort,
   realSandboxTimeout,
   rpc,
   signup,
@@ -325,7 +326,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await captureScreenshot(page, testInfo, "12-bot-settings");
 });
 
-test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) => {
+test("sign-in, spawn, and stop work in the shell", async ({ page, baseURL }, testInfo) => {
+  if (!baseURL) throw new Error("The shell journey requires a configured app URL");
   const browserErrors: string[] = [];
   const failedRequests: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
@@ -333,6 +335,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
+    if (isExpectedAuthCapabilitiesAbort(request, baseURL)) return;
     failedRequests.push(
       `${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`,
     );
@@ -350,6 +353,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
 
   const composer = page.locator('textarea[name="chat-message"]');
   await composer.fill("spawn a bot named Scout to research venues");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await page.keyboard.press("Enter");
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
     timeout: 30_000,
@@ -361,6 +365,7 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     .getByRole("button", { name: /^Chief/ })
     .click();
   await composer.fill("keep working until I stop you");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
     timeout: 30_000,
@@ -371,6 +376,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   await composer.fill("Use the newer report and keep the answer short.");
+  // A visible running state can precede the previous send's thread refresh finishing.
+  // Disabled buttons are skipped by Tab, so wait before testing keyboard navigation.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");

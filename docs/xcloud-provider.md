@@ -46,12 +46,49 @@ flavor, and image are present. Network and admin username default to `default` a
 - Lifecycle and workspace transfers are persistent Xcloud operations and survive
   an API restart.
 - Screen observation and input use the hypervisor framebuffer. No Screen Recording
-  or Accessibility permission is required inside macOS.
+  or Accessibility permission is required for that transport. Secure automatic
+  login has separate guest-image requirements below.
+- `prepare()` also waits for the intended macOS console user to finish logging in
+  with an unlocked desktop. A healthy guest agent alone is not readiness.
 - The viewer URL contains only a short-lived capability. The VNC password remains
   server-side.
 - Xcloud enforces the active screen lease, interactive state, control token, and
   monotonically increasing fence before accepting input.
 - macOS V1 exposes one graphical screen (`multiScreen: false`) and no PTY.
+
+### macOS session preparation (development build)
+
+Deploy the gateway's `POST /v1/xcloud/computers/:id/session/prepare` endpoint before
+deploying this adapter revision. Older gateways fail closed; there is no fallback
+that treats a login window as a ready computer.
+
+The gateway generates a per-computer account password and uses its existing
+encrypted password-provisioning worker. It waits for that password to be verified
+inside the guest. Neither Rakazo configuration nor model tool output receives the
+password. Existing provider computers without a managed password are initialized
+through the same path when no screen controller is active.
+
+An already-unlocked session needs no UI permissions. For automatic login or unlock,
+the image must permit the guest automation runtime (`osascript`, launched by the
+system guest agent) to use Accessibility and automate System Events. Its login
+window must expose a secure text field and a confirm/default-button action. A
+password-only cold login must identify the selected account by short name; an
+ambiguous account picker is rejected. Qualify these permissions and controls in
+the image build, not through runtime prompts or edits to the TCC database.
+
+Login targets only Apple's loginwindow secure field. It never uses the clipboard
+or global typing, disables FileVault or screen locking, logs out another user, or
+reboots the machine. Active screen control permits readiness checks but prevents
+login input. A failed submission is not repeated for the same credential until a
+successful unlock clears the guard or the guest reboots. Password rotation also
+allows a new attempt. Provisioning, unknown session state, and an in-progress
+login remain pending; an unsafe/unavailable login surface reports a specific error.
+
+Before releasing, verify a disposable image from both the logged-out and locked
+states and confirm workspace commands start only after an unlocked session is
+observed. Offline tests and the read-only native probe do not replace that VM
+acceptance test. The compatibility table below describes the released baseline,
+not acceptance of this development change.
 
 ## Compatibility
 

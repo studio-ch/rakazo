@@ -10,6 +10,7 @@ import {
   LAUNCH_CHECK_DELAY_MS,
 } from "./auto-update.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
+import { MOUNTED_APP_DOCUMENT_READY } from "./document-readiness.js";
 import {
   LocalStackController,
   readStackWebUrl,
@@ -435,45 +436,7 @@ async function waitForMountedAppDocument(contents: Electron.WebContents) {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
-    const ready = (await contents.executeJavaScript(`(() => {
-      const appState =
-        document.querySelector("[data-rakazo-app-state]")?.getAttribute("data-rakazo-app-state") ??
-        null;
-      if (appState === "session-pending") return false;
-
-      const shell = document.querySelector('[data-testid="shell-root"]');
-      const shellBootstrapped = Boolean(
-        (shell && shell.getAttribute("data-ready") === "true") ||
-          performance.getEntriesByName("rk:renderer:shell-ready").length > 0,
-      );
-      const authOrWelcomeSurface = Boolean(
-        document.querySelector(
-          'form input[type="email"], form input[name="email"], form input#email',
-        ) ||
-          Array.from(document.querySelectorAll("button")).some((button) =>
-            /sign\\s*in/i.test((button.textContent || "").trim()),
-          ) ||
-          document.querySelector(
-            '[aria-label="Model"], [aria-label="Model id"], [aria-label="Models from server"]',
-          ),
-      );
-      const surfaceReady = shellBootstrapped || authOrWelcomeSurface;
-      const sessionReady =
-        appState === "ready" ||
-        performance.getEntriesByName("rk:renderer:session-committed").length > 0;
-      if (sessionReady && surfaceReady) return true;
-
-      // Desktop e2e fixtures mount a plain page without Rakazo app-state markers.
-      if (appState === null) {
-        const bodyText = (document.body?.innerText || "").trim();
-        if (bodyText.includes("Opening your Space")) return false;
-        if (bodyText === "Loading…" || bodyText === "Loading...") return false;
-        const mainText = (document.querySelector("main")?.textContent || "").trim();
-        const rootChildren = document.getElementById("root")?.childElementCount ?? 0;
-        return mainText.length > 0 || rootChildren > 0;
-      }
-      return false;
-    })()`)) as boolean;
+    const ready = (await contents.executeJavaScript(MOUNTED_APP_DOCUMENT_READY)) as boolean;
     if (ready) return;
     await new Promise((r) => setTimeout(r, 50));
   }

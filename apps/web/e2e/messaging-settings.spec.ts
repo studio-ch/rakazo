@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+test.afterEach(async ({ page }) => {
+  // Polling can leave a route.fetch() in flight when the final assertion finishes.
+  // Drain those handlers before Playwright disposes their request context.
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 /**
  * The messaging surface is env-gated off in E2E (no platform credentials),
  * so the surface RPCs are fulfilled with fixture data. The screen itself —

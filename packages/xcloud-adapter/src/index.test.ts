@@ -121,6 +121,7 @@ describe("XcloudSandboxProvider", () => {
   it("creates a missing workspace from its existing parent directory", async () => {
     const execBodies: unknown[] = [];
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/session/prepare")) return Response.json({ state: "ready" });
       if (String(input).endsWith("/v1/xcloud/computers/computer-1")) {
         return Response.json(dto);
       }
@@ -143,6 +144,75 @@ describe("XcloudSandboxProvider", () => {
         home: "/Users/admin",
       },
     ]);
+  });
+
+  it("waits for an authenticated unlocked desktop before preparing the workspace", async () => {
+    let checks = 0;
+    const exec = vi.fn();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/session/prepare")) {
+        expect(init?.method).toBe("POST");
+        checks += 1;
+        return Response.json(
+          { state: checks === 1 ? "pending" : "ready" },
+          { status: checks === 1 ? 202 : 200 },
+        );
+      }
+      if (String(input).endsWith("/v1/xcloud/computers/computer-1")) return Response.json(dto);
+      exec();
+      expect(checks).toBe(2);
+      return new Response(`${JSON.stringify({ exit: { code: 0, timedOut: false } })}\n`);
+    });
+    await new XcloudSandboxProvider({ ...config(fetcher), preparePollMs: 0 }).prepare(
+      computer,
+      context(),
+    );
+    expect(exec).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces a blocked macOS login without executing workspace commands", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).endsWith("/session/prepare"))
+        return Response.json(
+          {
+            state: "blocked",
+            code: "gui_accessibility_required",
+            detail: "The image requires Accessibility permission.",
+          },
+          { status: 409 },
+        );
+      if (String(input).endsWith("/v1/xcloud/computers/computer-1")) return Response.json(dto);
+      throw new Error("workspace exec must not run");
+    });
+    await expect(
+      new XcloudSandboxProvider(config(fetcher)).prepare(computer, context()),
+    ).rejects.toThrow("The image requires Accessibility permission.");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out rather than reporting a login window as ready", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/session/prepare")
+        ? Response.json({ state: "pending" }, { status: 202 })
+        : Response.json(dto),
+    );
+    await expect(
+      new XcloudSandboxProvider({ ...config(fetcher), prepareTimeoutMs: 0 }).prepare(
+        computer,
+        context(),
+      ),
+    ).rejects.toThrow("timed out waiting for the Xcloud macOS desktop session");
+  });
+
+  it("fails closed when the backend has not deployed session preparation", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/session/prepare")
+        ? Response.json({ detail: "Not found" }, { status: 404 })
+        : Response.json(dto),
+    );
+    await expect(
+      new XcloudSandboxProvider(config(fetcher)).prepare(computer, context()),
+    ).rejects.toThrow("Not found");
   });
 
   it("surfaces a pre-stream agent error before the synthetic exit event", async () => {

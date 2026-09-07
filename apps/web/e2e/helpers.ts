@@ -1,4 +1,17 @@
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Page, type Request, type TestInfo } from "@playwright/test";
+
+export function isExpectedAuthCapabilitiesAbort(
+  request: Pick<Request, "method" | "url" | "failure">,
+  appUrl: string,
+) {
+  // AuthPage cancels this optional lookup on cleanup, including StrictMode remounts.
+  // Keep other endpoints, origins, methods, and transport failures test-critical.
+  return (
+    request.method() === "GET" &&
+    request.url() === new URL("/api/auth/capabilities", appUrl).href &&
+    request.failure()?.errorText === "net::ERR_ABORTED"
+  );
+}
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
   return provider === "e2b" || provider === "daytona" || provider === "box";

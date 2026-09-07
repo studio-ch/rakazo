@@ -1,6 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+test("signed-out root exposes the desktop-ready welcome surface", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await expect(page.getByTestId("welcome-page")).toBeVisible();
+  await expect(page.locator('[data-rakazo-app-state="ready"]')).toBeVisible();
+  await captureScreenshot(page, testInfo, "desktop-ready-welcome");
+  await page.getByRole("button", { name: /Sign up/ }).click();
+  await expect(page.getByPlaceholder("Your email address")).toBeVisible();
+});
+
 test("restricted signup waits for mailbox verification", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/capabilities", (route) =>
@@ -115,6 +124,9 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   const message = "Fake composer regression check.";
   await composer.fill(message);
+  // The transcript can update before the first send finishes refreshing its thread.
+  // Enter does not wait for Send to become enabled, unlike clicking that button.
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await captureScreenshot(page, testInfo, "40-restored-auth-session");
   await composer.press("Enter");
   await expect(composer).toHaveValue("");
