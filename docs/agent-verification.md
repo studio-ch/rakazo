@@ -21,6 +21,16 @@ command. Nightly verification never starts computer sandboxes or requests model
 or sandbox credentials.
 Missing live credentials mean **not run**, not a passing model evaluation.
 
+### Optional screenshot publication
+
+CI keeps Playwright reports and screenshots as GitHub Actions artifacts without
+external storage. The separate screenshot gallery is optional. Both publishing
+workflows skip it when any required repository configuration is missing: secrets
+`S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, and variables `S3_REGION`, `S3_BUCKET`,
+`S3_ENDPOINT`, and `PLAYWRIGHT_PUBLIC_BASE_URL`. The job summary explains the skip;
+it does not change the test result or artifact retention. A fully configured
+publisher still fails on upload errors.
+
 ## Deterministic Pi tests
 
 `packages/testkit/src/model-emulator.ts` serves a loopback OpenAI-compatible
